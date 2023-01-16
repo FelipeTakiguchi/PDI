@@ -1,35 +1,568 @@
 using System;
 using System.Linq;
 using System.Drawing;
+using System.Numerics;
 using System.Windows.Forms;
 using System.Drawing.Imaging;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
-(Bitmap bmp, float[] img) affine((Bitmap bmp, float[] img) t,
-    params float[] p)
-{
-    float[] final = new float[t.img.Length];
-    var width = t.bmp.Width;
-    var height = t.bmp.Height;
 
-    for (int y = 0; y < height; y++)
+(float[], double[,]) KMean((Bitmap bmp, float[] img) t, int pix){
+    var img = t.img;
+    //size of image
+    float wid = t.bmp.Width;
+    float hei = t.bmp.Height;
+    byte[] image = discret(img);
+    //create the return image
+    float[] newImg = new float[image.Length];
+    // //position of the colors pixels
+    // var pixel = new float[pix];
+    //group of the pallete collors
+    byte[,] colors = new byte[pix, 3];
+    
+    var value = double.MaxValue;
+    double[] minDistance = new double[pix];
+    double[] minIndex = new double[pix];
+    
+    //set random value to get random pallete of colors
+    var random = new Random();
+
+    for (int i = 0; i < pix; i++)
     {
-        for (int x = 0; x < width; x++)
+        for (int k = 0; k < 3; k++)
         {
-            var x1 = (int)(p[0] * x + p[1] * y + p[2]);
-            var y1 = (int)(p[3] * x + p[4] * y + p[5]);
-            int index = (int)(y * width + x);
-            int newIndex = (int)(y1 * width + x1);
+            var color = (byte)random.NextInt64(0, 255);
 
-            if(x1 >= width || x1 < 0 || y1 >= height || y1 < 0)
-                continue;
+            colors[i,k] = color;
+        }    
+    }
 
-            final[newIndex] = t.img[index]; 
+    bool verify = true;
+
+    //Set the new image to the palette random values to before agroup them
+    while(verify){
+        verify = true;
+        for (int i = 0; i < hei; i++)
+        {
+            for (int j = 0; j < wid-3; j+=3)
+            {
+                for (int k = 0; k < pix; k++)
+                {
+                    var index = (int)(i + j * wid);
+                    value = Math.Pow(img[index] - colors[k, 0], 2) +
+                    Math.Pow(img[index + 1] - colors[k, 1], 2) +
+                    Math.Pow(img[index + 2] - colors[k, 2], 2);
+                    
+                    if(minDistance[k] < value && img[index] >= 0f) 
+                    {
+                        minDistance[k] = value;
+                        minIndex[k] = index;
+                        img[index] = float.MinValue;
+                        img[index+1] = float.MinValue;
+                        img[index+2] = float.MinValue;
+                    }
+                }
+            }
+        }
+
+        for (int k = 0; k < pix; k++)
+        {
+            if(minIndex[k] == double.MaxValue)
+            {
+                verify = false;
+                break;
+            }
+
+            newImg[(int)minIndex[k]] = colors[k, 0];
+            newImg[(int)minIndex[k]+1] = colors[k, 1];
+            newImg[(int)minIndex[k]+2] = colors[k, 2];
+            minIndex[k] = double.MaxValue;
         }
     }
 
-    return (t.bmp, final);
+    double[,] mean = new double[pix, 3];
+
+    for (int i = 0; i < pix; i++)
+    {
+        mean[i, 0] = 0.0f;
+        mean[i, 1] = 0.0f;
+        mean[i, 2] = 0.0f;
+    }
+
+    int[] count = new int[pix];
+    
+    for (int i = 0; i < pix; i++)
+        count[i] = 0;
+
+    for (int i = 0; i < hei; i++)
+    {
+        for (int j = 0; j < wid-3; j+=3)
+        {
+            for (int k = 0; k < pix; k++)
+            {
+                var index = (int)(i + j * wid);
+                if(newImg[index] == colors[k, 0] && newImg[index+1] == colors[k, 1] && newImg[index+2] == colors[k, 2]){
+                    mean[k, 0] += colors[k, 0];
+                    mean[k, 1] += colors[k, 1];
+                    mean[k, 2] += colors[k, 2];
+                    count[k]++;
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < pix; i++)
+    {
+        if(count[i] >= 0)
+            mean[i, 0] = mean[i, 0]/count[i];
+    }
+
+    return (newImg, mean);
+}
+
+(Bitmap bmp, float[] img) compressImage((Bitmap bmp, float[] img) t, int pix=3){
+    var newImage = KMean(t, pix);
+    var wid = t.bmp.Width;
+    var hei = t.bmp.Height;
+
+    for (int i = 0; i < hei; i++)
+    {
+        for (int j = 0; j < wid; j++)
+        {
+            for (int k = 0; k < pix; k++)
+            {
+                var index = i + j * wid;
+                if(newImage.Item1[index] == k){
+                    newImage.Item1[index] = (float)newImage.Item2[k, 0];
+                    newImage.Item1[index+1] = (float)newImage.Item2[k, 1];
+                    newImage.Item1[index+2] = (float)newImage.Item2[k, 2];
+                }
+            }
+        }        
+    }
+
+    return (t.bmp, newImage.Item1);
+}
+
+// (Bitmap bmp, float[] img) interpolation((Bitmap bmp, float[] img) t)
+// {
+//     //O Código pega a média das 4 diagonais e coloca no pixel do meio
+
+//     float[] image = t.img;
+//     float[] newImage = new float[image.Length];
+//     int width = t.bmp.Width;
+//     int height = t.bmp.Height;
+
+//     for (int linha = 0; linha < height; linha++)
+//     {
+//         for (int coluna = 0; coluna < width; coluna++)
+//         {
+//             int index = coluna + linha * width;
+//             if (image[index] > 0f || 
+//                 coluna == 0 || linha == 0 || 
+//                 coluna == width - 1 || linha == height - 1)
+//             {
+//                 newImage[index] = image[index];
+//                 continue;
+//             }
+
+//             var CimaEsquerda = coluna - 1 + (linha - 1) * width;
+//             var CimaDireita = coluna + 1 + (linha - 1) * width;
+//             float upAverage = (image[CimaEsquerda] + image[CimaDireita]) / 2;
+
+//             var BaixoEsquerda = coluna - 1 + (linha + 1) * width;
+//             var BaixoDireita = coluna + 1 + (linha + 1) * width;
+//             float downAverage = (image[BaixoEsquerda] + image[BaixoDireita]) / 2;
+
+//             newImage[index] = (upAverage + downAverage) / 2;
+//         }
+//     }
+
+//     var newGrayImg = discretGray(newImage);
+//     img(t.bmp, newGrayImg);
+
+//     return (t.bmp, newImage);
+// }
+
+//Código semi-pronto
+// (Bitmap bmp, float[] img) interpolation((Bitmap bmp, float[] img) t)
+// {
+//     //O Código pega a média das 4 diagonais e coloca no pixel do meio
+
+//     float[] image = t.img;
+//     float[] newImage = new float[image.Length];
+//     int width = t.bmp.Width;
+//     int height = t.bmp.Height;
+
+//     for (int linha = 0; linha < height; linha++)
+//     {
+//         for (int coluna = 0; coluna < width; coluna++)
+//         {
+//             int index = coluna + linha * width;
+//             if (image[index] > 0f || 
+//                 coluna == 0 || linha == 0 || 
+//                 coluna == width - 1 || linha == height - 1)
+//             {
+//                 newImage[index] = image[index];
+//                 continue;
+//             }
+
+//             var x = 1;
+//             var y = 1;
+//             var CimaDireita = coluna + 1 + (linha - 1) * width;
+//             var CimaEsquerda = coluna - 1 + (linha - 1) * width;
+//             var BaixoEsquerda = coluna - 1 + (linha + 1) * width;
+//             var BaixoDireita = coluna + 1 + (linha + 1) * width;
+//             var flag = false;
+
+//             //Find Nearest Neighbour to the píxel I want to
+//             //Get the 4 diagonals and get into then a ponderated value
+//             //Equals to the grid size - 1 like: diagonal 1 * the other diaginal distance - 1
+//             //D1 * Distance2 - 1 + D2 * Distance1 - 1
+//             //D3 * Distance4 - 1 + D4 * Distance3 - 1
+
+//             while(true){
+//                 if(image[CimaDireita] == 0f){
+//                     CimaDireita = coluna + x + (linha - y) * width;
+//                 } 
+
+//                 if(image[CimaEsquerda] == 0f){
+//                     CimaEsquerda = coluna - x + (linha - y) * width;
+//                 }
+
+                
+//                 if(image[BaixoEsquerda] == 0f){
+//                     BaixoEsquerda = coluna - x + (linha + y) * width;
+//                 }
+                
+//                 if(image[BaixoDireita] == 0f){
+//                     BaixoDireita = coluna + x + (linha + y) * width;
+//                 }
+
+//                 if(flag){
+//                     x++;
+//                     flag = false;
+//                 } else{
+//                     y++;
+//                     flag = true;
+//                 }
+
+                
+//                 if(CimaDireita >= image.Length  || CimaEsquerda < 0 || BaixoDireita >= image.Length || BaixoEsquerda < 0)
+//                     break;
+                
+//                 if(image[CimaDireita] == 0f || image[CimaEsquerda] == 0f || image[BaixoDireita] == 0f || image[BaixoEsquerda] == 0f)
+//                     continue;
+                
+//                 break;
+//             }
+            
+//             float upAverage;
+
+//             if(CimaDireita >= image.Length  || CimaEsquerda < 0)
+//                 upAverage = 0f;
+//             else
+//                 upAverage = (image[CimaEsquerda] + image[CimaDireita]) / 2;
+//             float downAverage;
+
+//             if(BaixoDireita >= image.Length || BaixoEsquerda < 0)
+//                 downAverage = 0f;
+//             else
+//                 downAverage = (image[BaixoEsquerda] + image[BaixoDireita]) / 2;
+
+//             newImage[index] = (upAverage + downAverage) / 2;
+//         }
+//     }
+
+//     var newGrayImg = discretGray(newImage);
+//     img(t.bmp, newGrayImg);
+
+//     return (t.bmp, newImage);
+// }
+
+//Começou a dar errado :(
+(Bitmap bmp, float[] img) interpolation((Bitmap bmp, float[] img) t)
+{
+    //O Código pega a média das 4 diagonais e coloca no pixel do meio
+
+    float[] image = t.img;
+    float[] newImage = new float[image.Length];
+    int width = t.bmp.Width;
+    int height = t.bmp.Height;
+
+    for (int linha = 0; linha < height; linha++)
+    {
+        for (int coluna = 0; coluna < width; coluna++)
+        {
+            int index = coluna + linha * width;
+            if (image[index] > 0f || 
+                coluna == 0 || linha == 0 || 
+                coluna == width - 1 || linha == height - 1)
+            {
+                newImage[index] = image[index];
+                continue;
+            }
+
+            var x = 1;
+            var y = 1;
+            var dx1 = 1;
+            var dx2 = 1;
+            var dx3 = 1;
+            var dx4 = 1;
+            var dy1 = 1;
+            var dy2 = 1;
+            var dy3 = 1;
+            var dy4 = 1;  
+            var CimaDireita = coluna + 1 + (linha - 1) * width;
+            var CimaEsquerda = coluna - 1 + (linha - 1) * width;
+            var BaixoEsquerda = coluna - 1 + (linha + 1) * width;
+            var BaixoDireita = coluna + 1 + (linha + 1) * width;
+            var flag = false;
+
+            //Find Nearest Neighbour to the píxel I want to
+            //Get the 4 diagonals and get into then a ponderated value
+            //Equals to the grid size - 1 like: diagonal 1 * the other diaginal distance - 1
+            //D1 * Distance2 - 1 + D2 * Distance1 - 1
+            //D3 * Distance4 - 1 + D4 * Distance3 - 1
+
+            while(true){
+                if(coluna - x < 0 || coluna + x >= t.bmp.Width || linha - y < 0 || linha + y >= t.bmp.Height)
+                    break;
+                if(image[CimaEsquerda] == 0f){
+                    CimaEsquerda = coluna - x + (linha - y) * width;
+                    dx1 = x;
+                    dy1 = y;
+                }
+                
+                if(image[CimaDireita] == 0f){
+                    CimaDireita = coluna + x + (linha - y) * width;
+                    dx2 = x;
+                    dy2 = y;
+                } 
+                
+                if(image[BaixoEsquerda] == 0f){
+                    BaixoEsquerda = coluna - x + (linha + y) * width;
+                    dx3 = x;
+                    dy3 = y;
+                }
+                
+                if(image[BaixoDireita] == 0f){
+                    BaixoDireita = coluna + x + (linha + y) * width;
+                    dx4 = x;
+                    dy4 = y;
+                }
+                
+                if(CimaDireita >= image.Length  || CimaEsquerda < 0 || BaixoDireita >= image.Length || BaixoEsquerda < 0)
+                    break;
+                
+                if(image[CimaDireita] == 0f || image[CimaEsquerda] == 0f || image[BaixoDireita] == 0f || image[BaixoEsquerda] == 0f)
+                {
+                    if(flag){
+                        x++;
+                        flag = false;
+                    } else{
+                        y++;
+                        flag = true;
+                    }
+                    continue;
+                }
+
+                break;
+            }
+            
+            float upAverage;
+            var dx = (x) * 2;
+            var dy = (y) * 2;
+
+            if(CimaDireita >= image.Length  || CimaEsquerda < 0)
+                upAverage = 0f;
+            else
+                upAverage = ((image[CimaEsquerda] * dx2 / dx) + (image[CimaDireita] * dx1 / dx));
+            
+            float downAverage;
+
+            if(BaixoDireita >= image.Length || BaixoEsquerda < 0)
+                downAverage = 0f;
+            else
+                downAverage = ((image[BaixoEsquerda] * dx4 / dx) + (image[BaixoDireita] * dx3/dx));
+
+            newImage[index] = (upAverage * (dy1 / dy)) + (downAverage * (dy3/dy));
+        }
+    }
+
+    var newGrayImg = discretGray(newImage);
+    img(t.bmp, newGrayImg);
+
+    return (t.bmp, newImage);
+}
+
+(Bitmap bmp, float[] img) hough((Bitmap bmp, float[] img) org)
+{
+    int wid = org.bmp.Width;
+    int hei = org.bmp.Height;
+    float[] tImg = new float[1000 * 1000];
+    Bitmap bmpTranformation = new Bitmap(1000, 1000);
+    var oImg = org.img;
+
+    for (int j = 0; j < hei; j++)
+    {
+        for (int i = 0; i < wid; i++)
+        {
+            int index = i + j * wid;
+            if (oImg[index] == 0f)
+                continue;
+            // y = ax + b
+            // b = -xa + y
+            float a = -i;
+            float b = j;
+
+            for (int x = 0; x < 1000; x++)
+            {
+                int y = (int)(a * (x / 250f - 2f) + b);
+                if (y < 0 || y >= 1000)
+                    continue;
+
+                tImg[x + y * 1000] += 0.01f;
+                if (tImg[x + y * 1000] > 1f)
+                    tImg[x + y * 1000] = 1f;
+            }
+        }
+    }
+
+    var tBytes = discretGray(tImg);
+    var image = img(bmpTranformation, tBytes);
+    return (image as Bitmap, tImg);
+} 
+
+(Bitmap bmp, float[] img) resize((Bitmap bmp, float[] img) org,
+    float scaleX, float scaleY)
+{
+    int wid = org.bmp.Width;
+    int hei = org.bmp.Height;
+    Bitmap newBmp = new Bitmap(
+        (int)(scaleX * wid),
+        (int)(scaleY * hei)
+    );
+    int sWid = newBmp.Width;
+    int sHei = newBmp.Height;
+    float[] orgImg = org.img;
+    float[] newImg = new float[sWid * sHei];
+    for (int j = 0; j < hei; j++)
+    {
+        for (int i = 0; i < wid; i++)
+        {
+            newImg[i + j * sWid]
+                = orgImg[i + j * wid];
+        }
+    }
+    var imgBytes = discretGray(newImg);
+    var bmp = img(newBmp, imgBytes) as Bitmap;
+    var image = (bmp, newImg);
+
+    image = affine(image,
+        scale(scaleX, scaleY));
+
+    return image;
+}
+
+Matrix4x4 mat(params float[] arr)
+{
+    return new Matrix4x4(
+        arr[0], arr[1], arr[2], 0,
+        arr[3], arr[4], arr[5], 0,
+        arr[6], arr[7], arr[8], 0,
+             0,      0,      0, 1
+    );
+}
+
+Matrix4x4 rotation(float degree)
+{
+    float radian = degree / 180 * MathF.PI;
+    float cos = MathF.Cos(radian);
+    float sin = MathF.Sin(radian);
+    return mat(
+        cos, -sin, 0,
+        sin,  cos, 0,
+          0,    0, 1
+    );
+}
+
+Matrix4x4 translate(float dx, float dy)
+{
+    return mat(
+        1, 0, dx,
+        0, 1, dy,
+        0, 0, 1
+    );
+}
+
+Matrix4x4 translateFromSize(float dx, float dy,
+    (Bitmap bmp, float[] img) t)
+{
+    return mat(
+        1, 0, dx * t.bmp.Width,
+        0, 1, dy * t.bmp.Height,
+        0, 0, 1
+    );
+}
+
+Matrix4x4 scale(float dx, float dy)
+{
+    return mat(
+        dx, 0, 0,
+        0, dy, 0,
+        0, 0, 1
+    );
+}
+
+Matrix4x4 shear(float cx, float cy)
+{
+    return mat(
+        1, cx, 0,
+        cy, 1, 0,
+        0, 0, 1
+    );
+}
+
+(Bitmap bmp, float[] img) affine((Bitmap bmp, float[] img) t,
+    Matrix4x4 mat)
+{
+    float[] p = new float[]
+    {
+        mat.M11, mat.M12, mat.M13,
+        mat.M21, mat.M22, mat.M23,
+        mat.M31, mat.M32, mat.M33,
+    };
+    var _img = t.img;
+    float[] nova = new float[_img.Length];
+    int wid = t.bmp.Width;
+    int hei = t.bmp.Height;
+    int x = 0;
+    int y = 0;
+    int index = 0;
+
+    for (int i = 0; i < wid; i++)
+    {
+        for (int j = 0; j < hei; j++)
+        {
+            x = (int)(p[0] * i + p[1] * j + p[2]);
+            y = (int)(p[3] * i + p[4] * j + p[5]);
+
+            if(x < 0 || x >= wid || y < 0 || y >= wid)
+                continue;
+            else
+            {
+                index = (int)(x + y * wid);
+                nova[index] = _img[i+j * wid];
+            }
+        }
+    }
+
+    var Imgbytes = discretGray(nova);
+    img(t.bmp, Imgbytes);
+
+    return (t.bmp, nova);
 }
 
 (Bitmap bmp, float[] img) sobel((Bitmap bmp, float[] img) t,
@@ -43,9 +576,9 @@ using System.Runtime.InteropServices;
 
     for (int i = 1; i < wid - 1; i++)
     {
-        float sum = 
-            im[i + 0 * wid] + 
-            im[i + 1 * wid] + 
+        float sum =
+            im[i + 0 * wid] +
+            im[i + 1 * wid] +
             im[i + 2 * wid];
         for (int j = 1; j < hei - 1; j++)
         {
@@ -56,15 +589,15 @@ using System.Runtime.InteropServices;
             sum += im[index + 1];
         }
     }
-    
+
     for (int j = 1; j < hei - 1; j++)
     {
-        float seq = 
-            im[0 + j * wid] + 
+        float seq =
+            im[0 + j * wid] +
             im[1 + j * wid];
         for (int i = 1; i < wid - 1; i++)
         {
-            float nextSeq = 
+            float nextSeq =
                 im[i + j * wid] +
                 im[i + 1 + j * wid];
 
@@ -105,14 +638,14 @@ using System.Runtime.InteropServices;
             {
                 for (int l = 0; l < N; l++)
                 {
-                    sum += _img[i + k - (N / 2) + (j + l - (N / 2)) * wid] * 
+                    sum += _img[i + k - (N / 2) + (j + l - (N / 2)) * wid] *
                         kernel[k + l * N];
                 }
             }
 
             if (sum > 1f)
                 sum = 1f;
-                
+
             else if (sum < 0f)
                 sum = 0f;
 
@@ -146,7 +679,7 @@ using System.Runtime.InteropServices;
         {
             if (kernel[j] == 0f)
                 continue;
-            
+
             int kx = j % tamKernel,
                 ky = j / tamKernel;
 
@@ -191,7 +724,7 @@ List<Rectangle> segmentation((Bitmap bmp, float[] img) t)
     var rects = segmentationT(t, 0);
     var areas = rects.Select(r => r.Width * r.Height);
     var average = areas.Average();
-    
+
     return rects
         .Where(r => r.Width * r.Height > average)
         .ToList();
@@ -213,7 +746,7 @@ List<Rectangle> segmentationT((Bitmap bmp, float[] img) t, int threshold)
     {
         if (img[i] > 0f)
             continue;
-        
+
         minx = int.MaxValue;
         miny = int.MaxValue;
         maxx = int.MinValue;
@@ -227,23 +760,23 @@ List<Rectangle> segmentationT((Bitmap bmp, float[] img) t, int threshold)
 
             if (j < 0 || j >= img.Length)
                 continue;
-            
+
             if (img[j] > 0f)
                 continue;
 
             int x = j % wid,
                 y = j / wid;
-            
+
             if (x < minx)
                 minx = x;
             if (x > maxx)
                 maxx = x;
-            
+
             if (y < miny)
                 miny = y;
             if (y > maxy)
                 maxy = y;
-            
+
             img[j] = crr;
             count++;
 
@@ -298,13 +831,13 @@ void otsu((Bitmap bmp, float[] img) t, float db = 0.05f)
         Dx1 -= value * value * histogram[i];
 
         float stddev =
-            Dx0 - N0 * Ex0 * Ex0 + 
+            Dx0 - N0 * Ex0 * Ex0 +
             Dx1 - N1 * Ex1 * Ex1;
-        
+
         if (float.IsInfinity(stddev) ||
             float.IsNaN(stddev))
             continue;
-        
+
         if (stddev < minstddev)
         {
             minstddev = stddev;
@@ -316,7 +849,7 @@ void otsu((Bitmap bmp, float[] img) t, float db = 0.05f)
     tresh(t, bestTreshold);
 }
 
-void tresh((Bitmap bmp, float[] img) t, 
+void tresh((Bitmap bmp, float[] img) t,
     float threshold = 0.5f)
 {
     for (int i = 0; i < t.img.Length; i++)
@@ -331,7 +864,7 @@ float[] equalization(
     int[] histogram = hist(t.img, db);
 
     int dropCount = (int)(t.img.Length * threshold);
-    
+
     float min = 0;
     int droped = 0;
     for (int i = 0; i < histogram.Length; i++)
@@ -357,7 +890,7 @@ float[] equalization(
     }
 
     var r = 1 / (max - min);
-    
+
     for (int i = 0; i < t.img.Length; i++)
     {
         float newValue = (t.img[i] - min) * r;
@@ -367,7 +900,7 @@ float[] equalization(
             newValue = 0f;
         t.img[i] = newValue;
     }
-    
+
     return t.img;
 }
 
@@ -378,12 +911,16 @@ void showHist((Bitmap bmp, float[] img) t, float db = 0.05f)
     showBmp(histImg);
 }
 
-(Bitmap bmp, float[] img) open(string path)
+(Bitmap bmp, float[] img) open(string path, bool colorful=true)
 {
     var bmp = Bitmap.FromFile(path) as Bitmap;
     var byteArray = bytes(bmp);
     var dataCont = continuous(byteArray);
     var gray = grayScale(dataCont);
+
+    if(colorful)
+        return(bmp, dataCont);
+        
     return (bmp, gray);
 }
 
@@ -406,14 +943,14 @@ Image drawHist(int[] hist)
     for (int i = 0; i < hist.Length; i++)
     {
         float bar = hist[i] * r;
-        g.FillRectangle(Brushes.Black, 
+        g.FillRectangle(Brushes.Black,
             margin + i * barlen,
-            bmp.Height - margin - bar, 
+            bmp.Height - margin - bar,
             barlen,
             bar);
-        g.DrawRectangle(Pens.DarkBlue, 
+        g.DrawRectangle(Pens.DarkBlue,
             margin + i * barlen,
-            bmp.Height - margin - bar, 
+            bmp.Height - margin - bar,
             barlen,
             bar);
     }
@@ -421,10 +958,14 @@ Image drawHist(int[] hist)
     return bmp;
 }
 
-void show((Bitmap bmp, float[] gray) t)
+void show((Bitmap bmp, float[] gray) t, bool colorful=true)
 {
     var bytes = discretGray(t.gray);
     var image = img(t.bmp, bytes);
+    if(colorful){
+        bytes = discret(t.gray);
+        image = img(t.bmp, bytes);
+    }
     showBmp(image);
 }
 
@@ -435,17 +976,17 @@ int[] hist(float[] img, float db = 0.05f)
 
     foreach (var pixel in img)
         histogram[(int)(pixel / db)]++;
-    
+
     return histogram;
 }
 
 float[] grayScale(float[] img)
 {
     float[] result = new float[img.Length / 3];
-    
+
     for (int i = 0, j = 0; i < img.Length; i += 3, j++)
     {
-        result[j] = 0.1f * img[i] + 
+        result[j] = 0.1f * img[i] +
             0.59f * img[i + 1] +
             0.3f * img[i + 2];
     }
@@ -456,7 +997,7 @@ float[] grayScale(float[] img)
 float[] continuous(byte[] img)
 {
     var result = new float[img.Length];
-    
+
     for (int i = 0; i < img.Length; i++)
         result[i] = img[i] / 255f;
 
@@ -466,7 +1007,7 @@ float[] continuous(byte[] img)
 byte[] discret(float[] img)
 {
     var result = new byte[img.Length];
-    
+
     for (int i = 0; i < img.Length; i++)
         result[i] = (byte)(255 * img[i]);
 
@@ -476,7 +1017,7 @@ byte[] discret(float[] img)
 byte[] discretGray(float[] img)
 {
     var result = new byte[3 * img.Length];
-    
+
     for (int i = 0; i < img.Length; i++)
     {
         var value = (byte)(255 * img[i]);
@@ -495,7 +1036,7 @@ byte[] bytes(Image img)
         new Rectangle(0, 0, img.Width, img.Height),
         ImageLockMode.ReadOnly,
         PixelFormat.Format24bppRgb);
-    
+
     byte[] byteArray = new byte[3 * data.Width * data.Height];
 
     byte[] temp = new byte[data.Stride * data.Height];
@@ -517,23 +1058,25 @@ byte[] bytes(Image img)
 
 Image img(Image img, byte[] bytes)
 {
+    var multiplicator = 3;
+
     var bmp = img as Bitmap;
     var data = bmp.LockBits(
         new Rectangle(0, 0, img.Width, img.Height),
         ImageLockMode.ReadWrite,
         PixelFormat.Format24bppRgb);
-    
+
     byte[] temp = new byte[data.Stride * data.Height];
-    
+
     for (int j = 0; j < data.Height; j++)
     {
-        for (int i = 0; i < 3 * data.Width; i++)
+        for (int i = 0; i < multiplicator * data.Width; i++)
         {
             temp[i + j * data.Stride] =
-                bytes[i + j * 3 * data.Width];
+                bytes[i + j * multiplicator * data.Width];
         }
     }
-    
+
     Marshal.Copy(temp, 0, data.Scan0, temp.Length);
 
     bmp.UnlockBits(data);
@@ -576,12 +1119,22 @@ void showRects((Bitmap bmp, float[] img) t, List<Rectangle> list)
 
     foreach (var rect in list)
         g.DrawRectangle(Pens.Red, rect);
-    
+
     showBmp(t.bmp);
 }
 
 var image = open("shuregui.png");
 
-image = affine(image, .6f, -.8f, 0f, .6f, .8f, 0f);
-
+image = compressImage(image);
+image.bmp.Save("testinho.png");
+// otsu(image);
+// image = affine(image, 
+//     translateFromSize(0.5f, 0.5f, image) * 
+//     rotation(90f) *
+//     translateFromSize(-0.5f, -0.5f, image));
+// image = conv(image, 
+//     1, 0, -1,
+//     2, 0, -2,
+//     1, 0, -1);
+// image = hough(image);
 show(image);
